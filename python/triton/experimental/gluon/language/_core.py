@@ -43,10 +43,15 @@ from triton.language.core import (
 
 _IMPORT_FROM_TRITON: List[str] = [
     "expand_dims",  # NOQA: F822
-    "program_id",  # NOQA: F822
     "load",  # NOQA: F822
+    "program_id",  # NOQA: F822
+    "reduce",  # NOQA: F822
+    "static_assert",  # NOQA: F822
     "store",  # NOQA: F822
     "to_tensor",  # NOQA: F822
+    "where",  # NOQA: F822
+    "maximum",  # NOQA: F822
+    "minimum",  # NOQA: F822
 ]
 
 __all__ = [
@@ -301,6 +306,5 @@ def warp_specialize(args, default_partition, worker_partitions, worker_num_warps
                     _semantic=None, _generator=None):
     worker_num_warps = [_unwrap_if_constexpr(w) for w in worker_num_warps]
     worker_num_regs = [_unwrap_if_constexpr(r) for r in worker_num_regs]
-    args = [_unwrap_if_constexpr(arg) for arg in args]
     return _semantic.warp_specialize(args, default_partition, worker_partitions, worker_num_warps,  #
                                      worker_num_regs, _generator)

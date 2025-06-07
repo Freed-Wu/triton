@@ -382,6 +382,7 @@ class CodeGenerator(ast.NodeVisitor):
                     getattr(val, "__triton_builtin__", False),  #
                     getattr(val, "__triton_aggregate__", False),  #
                     getattr(val, "__module__", "").startswith("triton.language"),  #
+                    getattr(val, "__module__", "").startswith("triton.experimental.gluon.language"),  #
                     isinstance(val, language.dtype),  #
                     _is_namedtuple(val),
                     self._is_constexpr_global(name),  #
@@ -1464,7 +1465,7 @@ class CodeGenerator(ast.NodeVisitor):
     }
 
 
-def ast_to_ttir(fn, src, context, options, codegen_fns, module_map):
+def ast_to_ttir(fn, src, context, options, codegen_fns, module_map, module=None):
     arg_types = [None] * len(fn.arg_names)
     for k, v in src.signature.items():
         idx = fn.arg_names.index(k)
@@ -1479,7 +1480,7 @@ def ast_to_ttir(fn, src, context, options, codegen_fns, module_map):
     proxy = namedtuple("SpecializationProxy", ["constants", "signature"])(constants, signature)
     generator = CodeGenerator(context, prototype, gscope=fn.__globals__.copy(), function_name=fn.repr(proxy), jit_fn=fn,
                               is_kernel=True, file_name=file_name, begin_line=begin_line, options=options,
-                              codegen_fns=codegen_fns, module_map=module_map)
+                              codegen_fns=codegen_fns, module_map=module_map, module=module)
     generator.visit(fn.parse())
     ret = generator.module
     # module takes ownership of the context

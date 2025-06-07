@@ -164,7 +164,7 @@ class GluonSemantic(TritonSemantic[TensorTy]):
         shape = [mem_desc.shape[i] for i in order]
         alloc_shape = mem_desc.type.alloc_shape
         new_alloc_shape = alloc_shape[:len(alloc_shape) - mem_desc.rank]
-        new_alloc_shape += [alloc_shape[:mem_desc.rank][i] for i in order]
+        new_alloc_shape += [alloc_shape[len(alloc_shape) - mem_desc.rank:][i] for i in order]
 
         ty = ttgl.shared_memory_descriptor_type(mem_desc.dtype, shape, layout, new_alloc_shape)
         handle = self.builder.create_memdesc_trans(ty.to_ir(self.builder), mem_desc.handle, order)
@@ -179,6 +179,41 @@ class GluonSemantic(TritonSemantic[TensorTy]):
         ty = ttgl.shared_memory_descriptor_type(dtype, shape, layout, shape)
         handle = self.builder.create_memdesc_reinterpret(ty.to_ir(self.builder), mem_desc.handle)
         return ttgl.shared_memory_descriptor(handle, **ty.__dict__)
+
+    def wrap_tensor(self, x, scalar_ty, ret_shape, layout):
+        if ret_shape:
+            res_ty = ttgl.distributed_type(scalar_ty, ret_shape, layout)
+        else:
+            res_ty = scalar_ty
+        return self.tensor(x, res_ty)
+
+    @staticmethod
+    def _check_same_layout(xs):
+        for x in xs:
+            _check(isinstance(x.type, ttgl.distributed_type), lambda: f"expected distributed_type but got: {x.type!r}")
+        layouts = [x.type.layout for x in xs]
+        l0 = layouts[0]
+        _check(all(l == l0 for l in layouts[1:]),
+               lambda: f"Expected inputs to have matching layouts, but got: {layouts}")
+
+    def reduction(self, inputs: Sequence[TensorTy], axis: int, region_builder_fn) -> Tuple[TensorTy, ...]:
+        _check(axis is not None, lambda: "All-reduce is not yet implemented in gluon")
+        # get result shape
+        shape = inputs[0].type.shape
+        rank = len(shape)
+        _check(0 <= axis < rank, lambda: f"expected reduction axis to be in the range [0, {rank}) but got {axis}")
+        self._check_same_layout(inputs)
+        ret_shape = [s for i, s in enumerate(shape) if i != axis]
+        ret_layout = SliceLayout(axis, inputs[0].type.layout)
+        assert all(t.type.shape == shape for t in inputs), "all reduction inputs must have the same shape"
+
+        reduce_op = self.builder.create_reduce([t.handle for t in inputs], axis)
+        region_builder_fn(reduce_op)
+        assert reduce_op.verify()
+
+        return tuple(
+            self.wrap_tensor(reduce_op.get_result(i), inputs[i].type.scalar, ret_shape, ret_layout)
+            for i in range(len(inputs)))
 
     def warp_specialize(self, args, default_partition, worker_partitions, worker_num_warps: Sequence[int],
                         worker_num_regs: Sequence[int], generator):
